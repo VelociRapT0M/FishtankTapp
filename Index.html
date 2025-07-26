@@ -425,9 +425,6 @@
   // Create plants on left and right sides
   const plants = [];
   for(let i = 0; i < 6; i++) {
-    const leftPlantSprite = plantSprites[Math.floor(Math.random() * plantSprites.length)];
-    plants.push(new Plant(leftPlantSprite, 1, HEIGHT - 10 - i*5));
-
     const rightPlantSprite = plantSprites[Math.floor(Math.random() * plantSprites.length)];
     plants.push(new Plant(rightPlantSprite, WIDTH - 6, HEIGHT - 10 - i*5));
   }
