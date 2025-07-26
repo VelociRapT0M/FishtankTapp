@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retro Pixel Fish Tank - Night Light & Bottom Plants</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a2a3d;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    #tank {
+      position: relative;
+      width: 480px;
+      height: 320px;
+      background: linear-gradient(to top, #003f5c 0%, #0077b6 80%, #00b4d8 100%);
+      border: 6px solid #222;
+      box-shadow: 0 0 20px #0ff inset;
+      image-rendering: pixelated;
+      cursor: crosshair;
+      overflow: hidden;
+    }
+
+    canvas {
+      image-rendering: pixelated;
+      display: block;
+      background: transparent;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Light bar at the top */
+    #light-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 24px;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,204,0.8), rgba(255,255,204,0));
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      z-index: 2;
+      filter: drop-shadow(0 0 5px rgba(255,255,204,0.7));
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <div id="tank">
+    <canvas id="canvas" width="480" height="320"></canvas>
+    <canvas id="light-bar" width="480" height="24"></canvas>
+  </div>
+
+<script>
+(() => {
+  const PIXEL = 4;
+  const WIDTH = 480 / PIXEL;
+  const HEIGHT = 320 / PIXEL;
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const lightCanvas = document.getElementById('light-bar');
+  const lightCtx = lightCanvas.getContext('2d');
+
+  const paletteBase = {
+    'r': '#ff4c4c',
+    'o': '#ff9e4c',
+    'y': '#ffd24c',
+    'g': '#4cff4c',
+    'b': '#4c8aff',
+    'p': '#d04cff',
+    'w': '#ffffff',
+    'k': '#000000',
+    ' ': null,
+  };
+
+  function varyColor(hex, variation=20) {
+    let r = parseInt(hex.substr(1,2),16);
+    let g = parseInt(hex.substr(3,2),16);
+    let b = parseInt(hex.substr(5,2),16);
+
+    r = Math.min(255, Math.max(0, r + (Math.random()*variation*2 - variation)|0));
+    g = Math.min(255, Math.max(0, g + (Math.random()*variation*2 - variation)|0));
+    b = Math.min(255, Math.max(0, b + (Math.random()*variation*2 - variation)|0));
+
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function createVariedPalette(basePalette) {
+    const newPal = {};
+    for (const k in basePalette) {
+      const c = basePalette[k];
+      if (c && k !== 'k' && k !== 'w') {
+        newPal[k] = varyColor(c, 15);
+      } else {
+        newPal[k] = c;
+      }
+    }
+    return newPal;
+  }
+
+  const fishSprites = [
+    {
+      pixels: [
+        "  kkk  ",
+        " kror  ",
+        "kroorrk",
+        " kror  ",
+        "  kkk  ",
+      ],
+      size: {w:7, h:5}
+    },
+    {
+      pixels: [
+        "   kk  ",
+        "  kbyk ",
+        " kbbbk ",
+        "kbybbk ",
+        " kk kk ",
+      ],
+      size: {w:7, h:5}
+    },
+    {
+      pixels: [
+        "   p   ",
+        "  ppp  ",
+        " ppppp ",
+        "ppppppp",
+        "  p p  ",
+      ],
+      size: {w:7, h:5}
+    },
+    {
+      pixels: [
+        "   y   ",
+        "  yyy  ",
+        " yyy  y",
+        "yyy   y",
+        "  yyy  ",
+      ],
+      size: {w:7, h:5}
+    },
+  ];
+
+  const plantSprites = [
+    [
+      "  g  ",
+      "  g  ",
+      "  g  ",
+      " ggg ",
+      "ggggg",
+    ],
+    [
+      "   g   ",
+      "  ggg  ",
+      " ggggg ",
+      "   g   ",
+      "  g g  ",
+    ],
+    [
+      "  g  ",
+      " ggg ",
+      " ggg ",
+      "  g  ",
+      "  g  ",
+    ],
+  ];
+
+  const bottomPlantSprites = [
+    [
+      "ggggg",
+      "g   g",
+      "ggggg"
+    ],
+    [
+      " ggg ",
+      "ggggg",
+      " ggg "
+    ],
+    [
+      "ggggg",
+      "g g g",
+      "ggggg"
+    ],
+  ];
+
+  const plantPalette = { 'g': '#228B22', ' ': null };
+
+  const bubbleSprite = [
+    "  w  ",
+    " w w ",
+    "  w  ",
+  ];
+  const bubblePalette = { 'w': 'rgba(255,255,255,0.6)', ' ': null };
+
+  const foodSprite = [
+    " w ",
+    "www",
+    " w "
+  ];
+  const foodPalette = { 'w': '#d2a05c', ' ': null };
+
+  function drawSprite(sprite, palette, x, y) {
+    for (let py = 0; py < sprite.length; py++) {
+      const row = sprite[py];
+      for (let px = 0; px < row.length; px++) {
+        const c = row[px];
+        const color = palette[c];
+        if (color) {
+          ctx.fillStyle = color;
+          ctx.fillRect(
+            (x + px) * PIXEL,
+            (y + py) * PIXEL,
+            PIXEL,
+            PIXEL
+          );
+        }
+      }
+    }
+  }
+
+  function drawSpriteOnCtx(sprite, palette, x, y, context) {
+    for (let py = 0; py < sprite.length; py++) {
+      const row = sprite[py];
+      for (let px = 0; px < row.length; px++) {
+        const c = row[px];
+        const color = palette[c];
+        if (color) {
+          context.fillStyle = color;
+          context.fillRect(
+            (x + px) * PIXEL,
+            (y + py) * PIXEL,
+            PIXEL,
+            PIXEL
+          );
+        }
+      }
+    }
+  }
+
+  class Fish {
+    constructor(sprite) {
+      this.sprite = sprite.pixels;
+      this.width = sprite.size.w;
+      this.height = sprite.size.h;
+      this.palette = createVariedPalette(paletteBase);
+
+      this.x = Math.random() * (WIDTH - this.width);
+      this.baseY = Math.random() * (HEIGHT - this.height - 30) + 15;
+
+      this.speedX = (Math.random() * 0.12 + 0.04) * (Math.random() < 0.5 ? 1 : -1);
+      this.swimPhase = Math.random() * Math.PI * 2;
+
+      this.swimAmplitude = 1.5 + Math.random() * 1;
+      this.swimFrequency = 0.04 + Math.random() * 0.02;
+
+      this.time = 0;
+
+      this.feeding = false;
+      this.foodTarget = null;
+    }
+
+    update() {
+      if(this.feeding && this.foodTarget && !this.foodTarget.consumed) {
+        const dx = this.foodTarget.x - this.x;
+        const dy = this.foodTarget.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist < 1) {
+          this.foodTarget.consumed = true;
+          this.feeding = false;
+          this.foodTarget = null;
+        } else {
+          this.speedX = 0.1 * (dx > 0 ? 1 : -1);
+          this.baseY += Math.sign(dy) * 0.05;
+          this.x += this.speedX;
+
+          if(this.baseY < 5) this.baseY = 5;
+          if(this.baseY > HEIGHT - this.height - 5) this.baseY = HEIGHT - this.height - 5;
+        }
+      } else {
+        this.x += this.speedX;
+        if (this.x < 0) {
+          this.x = 0;
+          this.speedX = -this.speedX;
+        }
+        if (this.x > WIDTH - this.width) {
+          this.x = WIDTH - this.width;
+          this.speedX = -this.speedX;
+        }
+      }
+
+      this.time += 1;
+      this.y = this.baseY + Math.sin(this.time * this.swimFrequency + this.swimPhase) * this.swimAmplitude;
+
+      if(this.y < 5) this.y = 5;
+      if(this.y > HEIGHT - this.height - 5) this.y = HEIGHT - this.height - 5;
+    }
+
+    draw() {
+      ctx.save();
+      if (this.speedX < 0) {
+        ctx.translate((this.x + this.width) * PIXEL, this.y * PIXEL);
+        ctx.scale(-1, 1);
+        drawSprite(this.sprite, this.palette, 0, 0);
+      } else {
+        ctx.translate(this.x * PIXEL, this.y * PIXEL);
+        drawSprite(this.sprite, this.palette, 0, 0);
+      }
+      ctx.restore();
+    }
+
+    startFeeding(food) {
+      this.feeding = true;
+      this.foodTarget = food;
+    }
+  }
+
+  class Plant {
+    constructor(sprite, x, y) {
+      this.sprite = sprite;
+      this.x = x;
+      this.y = y;
+      this.palette = plantPalette;
+    }
+    draw() {
+      drawSprite(this.sprite, this.palette, this.x, this.y);
+    }
+  }
+
+  class BottomPlant {
+    constructor(sprite, x, y) {
+      this.sprite = sprite;
+      this.x = x;
+      this.y = y;
+      this.palette = plantPalette;
+    }
+    draw() {
+      drawSprite(this.sprite, this.palette, this.x, this.y);
+    }
+  }
+
+  class Bubble {
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+      this.sprite = bubbleSprite;
+      this.palette = bubblePalette;
+      this.speedY = 0.15 + Math.random() * 0.15;
+      this.alpha = 0.6 + Math.random() * 0.4;
+      this.size = 1 + Math.random() * 2;
+    }
+    update() {
+      this.y -= this.speedY;
+      if (this.y < -3) {
+        this.y = HEIGHT + Math.random() * 5;
+        this.x = Math.random() * WIDTH;
+        this.speedY = 0.15 + Math.random() * 0.15;
+        this.alpha = 0.6 + Math.random() * 0.4;
+        this.size = 1 + Math.random() * 2;
+      }
+    }
+    draw() {
+      ctx.globalAlpha = this.alpha;
+      ctx.save();
+      ctx.translate(this.x * PIXEL, this.y * PIXEL);
+      ctx.scale(this.size, this.size);
+      drawSprite(this.sprite, this.palette, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1.0;
+    }
+  }
+
+  class Food {
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+      this.sprite = foodSprite;
+      this.palette = foodPalette;
+      this.consumed = false;
+      this.fallSpeed = 0.15 + Math.random() * 0.1;
+    }
+    update() {
+      if (!this.consumed) {
+        this.y += this.fallSpeed;
+        if (this.y > HEIGHT - 5) this.y = HEIGHT - 5;
+      }
+    }
+    draw() {
+      if (!this.consumed) {
+        drawSprite(this.sprite, this.palette, this.x, this.y);
+      }
+    }
+  }
+
+  // Create plants on left and right sides
+  const plants = [];
+  for(let i = 0; i < 6; i++) {
+    const leftPlantSprite = plantSprites[Math.floor(Math.random() * plantSprites.length)];
+    plants.push(new Plant(leftPlantSprite, 1, HEIGHT - 10 - i*5));
+
+    const rightPlantSprite = plantSprites[Math.floor(Math.random() * plantSprites.length)];
+    plants.push(new Plant(rightPlantSprite, WIDTH - 6, HEIGHT - 10 - i*5));
+  }
+
+  // Bottom plants spanning the width at the bottom
+  const bottomPlants = [];
+  const bottomY = HEIGHT - 3; // a few rows at bottom
+  let xPos = 0;
+  while (xPos < WIDTH) {
+    const sprite = bottomPlantSprites[Math.floor(Math.random() * bottomPlantSprites.length)];
+    bottomPlants.push(new BottomPlant(sprite, xPos, bottomY));
+    xPos += sprite[0].length + 1; // spacing between plants
+  }
+
+  const fishes = [];
+  for(let i=0; i < 8; i++) {
+    const sprite = fishSprites[Math.floor(Math.random() * fishSprites.length)];
+    fishes.push(new Fish(sprite));
+  }
+
+  const bubbles = [];
+  for(let i=0; i < 25; i++) {
+    bubbles.push(new Bubble(Math.random() * WIDTH, Math.random() * HEIGHT));
+  }
+
+  const foods = [];
+
+  // Real world time day/night cycle functions:
+  function getTimeOfDayNormalized() {
+    const now = new Date();
+    const secondsInDay = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    return secondsInDay / 86400; // 86400 seconds in 24h
+  }
+
+  function drawDayNightOverlay() {
+    const timeOfDay = getTimeOfDayNormalized();
+    // alpha from 0 (noon) to 0.5 (midnight)
+    const alpha = Math.abs(Math.cos(timeOfDay * Math.PI * 2)) * 0.5;
+    ctx.fillStyle = `rgba(0, 0, 60, ${alpha.toFixed(2)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return alpha;
+  }
+
+  // Light bar fade on at night
+  function drawLightBar(alpha) {
+    // Max light brightness at alpha=0.5 (midnight)
+    const maxOpacity = 0.7;
+    const opacity = (alpha / 0.5) * maxOpacity;
+    lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
+
+    if (opacity > 0.01) {
+      lightCtx.globalAlpha = opacity;
+      // Draw light pixels — simple bright yellowish horizontal bar with slight flicker
+      for(let x=0; x < lightCanvas.width / PIXEL; x++) {
+        const flicker = (Math.random()*0.2 + 0.8);
+        lightCtx.fillStyle = `rgba(255,255,180,${flicker})`;
+        lightCtx.fillRect(x*PIXEL, 0, PIXEL, lightCanvas.height);
+      }
+      lightCtx.globalAlpha = 1.0;
+    }
+  }
+
+  // Touch and mouse feeding:
+  function addFood(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((clientX - rect.left) / PIXEL);
+    const y = Math.floor((clientY - rect.top) / PIXEL);
+    foods.push(new Food(x, y));
+  }
+
+  canvas.addEventListener('click', e => {
+    addFood(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const touch of e.touches) {
+      addFood(touch.clientX, touch.clientY);
+    }
+  }, { passive: false });
+
+  function loop() {
+    // Clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw plants left/right
+    plants.forEach(p => p.draw());
+
+    // Draw bottom plants
+    bottomPlants.forEach(p => p.draw());
+
+    // Update and draw bubbles
+    bubbles.forEach(b => {
+      b.update();
+      b.draw();
+    });
+
+    // Update and draw foods
+    foods.forEach(f => {
+      f.update();
+      f.draw();
+    });
+
+    // Remove consumed foods
+    for(let i = foods.length - 1; i >= 0; i--) {
+      if(foods[i].consumed) foods.splice(i, 1);
+    }
+
+    // Update fishes - make fish eat food if near
+    fishes.forEach(fish => {
+      if(!fish.feeding) {
+        // Find closest food
+        let closestFood = null;
+        let closestDist = Infinity;
+        foods.forEach(food => {
+          if(!food.consumed) {
+            const dx = (food.x - fish.x);
+            const dy = (food.y - fish.y);
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if(dist < closestDist && dist < 20) {
+              closestDist = dist;
+              closestFood = food;
+            }
+          }
+        });
+        if(closestFood) {
+          fish.startFeeding(closestFood);
+        }
+      }
+      fish.update();
+      fish.draw();
+    });
+
+    // Draw day/night overlay synced to real time
+    const overlayAlpha = drawDayNightOverlay();
+
+    // Draw light bar on top canvas with same alpha
+    drawLightBar(overlayAlpha);
+
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+
+})();
+</script>
+</body>
+</html>
