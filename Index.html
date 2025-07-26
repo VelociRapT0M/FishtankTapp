@@ -246,6 +246,8 @@
     }
   }
 
+  
+  
   class Fish {
     constructor(sprite) {
       this.sprite = sprite.pixels;
@@ -255,6 +257,7 @@
 
       this.x = Math.random() * (WIDTH - this.width);
       this.baseY = Math.random() * (HEIGHT - this.height - 30) + 15;
+      this.y = this.baseY;
 
       this.speedX = (Math.random() * 0.12 + 0.04) * (Math.random() < 0.5 ? 1 : -1);
       this.swimPhase = Math.random() * Math.PI * 2;
@@ -266,52 +269,55 @@
 
       this.feeding = false;
       this.foodTarget = null;
+
+      this.scale = 1; // scale factor for growth
     }
 
     update() {
-      if(this.feeding && this.foodTarget && !this.foodTarget.consumed) {
+      this.time += 1;
+
+      if (this.feeding && this.foodTarget && !this.foodTarget.consumed) {
         const dx = this.foodTarget.x - this.x;
         const dy = this.foodTarget.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if(dist < 1) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 1) {
           this.foodTarget.consumed = true;
           this.feeding = false;
           this.foodTarget = null;
+          this.scale += 0.05; // grow slightly after eating
         } else {
-          this.speedX = 0.1 * (dx > 0 ? 1 : -1);
-          this.baseY += Math.sign(dy) * 0.05;
-          this.x += this.speedX;
+          const angle = Math.atan2(dy, dx);
+          this.x += Math.cos(angle) * 0.5;
+          this.y += Math.sin(angle) * 0.3;
 
-          if(this.baseY < 5) this.baseY = 5;
-          if(this.baseY > HEIGHT - this.height - 5) this.baseY = HEIGHT - this.height - 5;
+          // Clamp inside tank boundaries
+          this.x = Math.max(0, Math.min(this.x, WIDTH - this.width));
+          this.y = Math.max(0, Math.min(this.y, HEIGHT - this.height));
         }
       } else {
+        // Swim pattern when idle
         this.x += this.speedX;
-        if (this.x < 0) {
-          this.x = 0;
-          this.speedX = -this.speedX;
+        if (this.x < 0 || this.x > WIDTH - this.width) {
+          this.speedX *= -1;
         }
-        if (this.x > WIDTH - this.width) {
-          this.x = WIDTH - this.width;
-          this.speedX = -this.speedX;
-        }
+
+        this.y = this.baseY + Math.sin(this.time * this.swimFrequency + this.swimPhase) * this.swimAmplitude;
+        this.y = Math.max(0, Math.min(this.y, HEIGHT - this.height));
       }
-
-      this.time += 1;
-      this.y = this.baseY + Math.sin(this.time * this.swimFrequency + this.swimPhase) * this.swimAmplitude;
-
-      if(this.y < 5) this.y = 5;
-      if(this.y > HEIGHT - this.height - 5) this.y = HEIGHT - this.height - 5;
     }
 
     draw() {
       ctx.save();
       if (this.speedX < 0) {
-        ctx.translate((this.x + this.width) * PIXEL, this.y * PIXEL);
-        ctx.scale(-1, 1);
+        ctx.translate((this.x + this.width / 2) * PIXEL, (this.y + this.height / 2) * PIXEL);
+        ctx.scale(-this.scale, this.scale);
+        ctx.translate(-this.width / 2 * PIXEL, -this.height / 2 * PIXEL);
         drawSprite(this.sprite, this.palette, 0, 0);
       } else {
-        ctx.translate(this.x * PIXEL, this.y * PIXEL);
+        ctx.translate((this.x + this.width / 2) * PIXEL, (this.y + this.height / 2) * PIXEL);
+        ctx.scale(this.scale, this.scale);
+        ctx.translate(-this.width / 2 * PIXEL, -this.height / 2 * PIXEL);
         drawSprite(this.sprite, this.palette, 0, 0);
       }
       ctx.restore();
@@ -322,6 +328,8 @@
       this.foodTarget = food;
     }
   }
+
+
 
   class Plant {
     constructor(sprite, x, y) {
@@ -379,6 +387,7 @@
   }
 
   
+  
   class Food {
     constructor(x, y) {
       this.x = x;
@@ -387,7 +396,7 @@
       this.palette = foodPalette;
       this.consumed = false;
       this.expired = false;
-      this.lifetime = 600; // about 10 seconds at 60fps
+      this.lifetime = 600; // 10 seconds at ~60fps
       this.fallSpeed = 0.03 + Math.random() * 0.04;
     }
     update() {
@@ -405,11 +414,12 @@
       }
     }
     draw() {
-      if (!this.consumed && !this.expired) {
+      if (!this.consumed) {
         drawSprite(this.sprite, this.palette, this.x, this.y);
       }
     }
   }
+
 
 
   // Create plants on left and right sides
